@@ -128,6 +128,90 @@ def _maybe_parse_json(value):
     return value
 
 
+def _slugify(value: str) -> str:
+    clean = "".join(char if char.isalnum() else "-" for char in value.lower())
+    while "--" in clean:
+        clean = clean.replace("--", "-")
+    return clean.strip("-")
+
+
+def _normalize_contact_entry(entry: dict) -> dict:
+    label = entry.get("label")
+    value = entry.get("value")
+    href = entry.get("href")
+    method = entry.get("method")
+
+    if not label and method:
+        label = str(method).strip().title()
+    if not href and value:
+        if label and label.lower() == "email":
+            href = f"mailto:{value}"
+        elif label and label.lower() == "phone":
+            href = f"tel:{value}"
+        else:
+            href = value
+    return {
+        "label": label or "",
+        "value": value or "",
+        "href": href or "",
+        "icon": entry.get("icon"),
+    }
+
+
+def _normalize_experience_entry(entry: dict) -> dict:
+    return {
+        "date": entry.get("date") or entry.get("duration") or "",
+        "role": entry.get("role") or "",
+        "company": entry.get("company") or "",
+        "link": entry.get("link"),
+        "description": entry.get("description") or entry.get("location"),
+        "highlights": entry.get("highlights") or entry.get("responsibilities") or [],
+        "current": entry.get("current", False),
+    }
+
+
+def _normalize_project_entry(entry: dict) -> dict:
+    title = entry.get("title") or ""
+    link = entry.get("link") or entry.get("url")
+    if not link and title:
+        link = f"/projects/{_slugify(title)}"
+    role_title = entry.get("role") or ""
+    achievements = entry.get("achievements") or entry.get("outcomes") or []
+    technologies = entry.get("technologies") or entry.get("tags") or []
+    return {
+        "title": title,
+        "tags": technologies,
+        "description": entry.get("description") or "",
+        "link": link or "",
+        "caseStudy": {
+            "overview": entry.get("overview") or "",
+            "goal": entry.get("goal") or "",
+            "role": {"title": role_title or "Full-Stack Engineer", "bullets": []},
+            "screenshots": entry.get("screenshots") or [],
+            "outcomes": achievements,
+        },
+    }
+
+
+def _normalize_skill_group(entry: dict) -> dict:
+    return {
+        "title": entry.get("title") or entry.get("category") or "",
+        "items": entry.get("items") or entry.get("skills") or [],
+    }
+
+
+def _normalize_update(field: str, value):
+    if field == "contacts" and isinstance(value, list):
+        return [_normalize_contact_entry(item) for item in value]
+    if field == "experience" and isinstance(value, list):
+        return [_normalize_experience_entry(item) for item in value]
+    if field == "projects" and isinstance(value, list):
+        return [_normalize_project_entry(item) for item in value]
+    if field == "skillGroups" and isinstance(value, list):
+        return [_normalize_skill_group(item) for item in value]
+    return value
+
+
 async def _upload_resume_and_update(user_id: str, file_bytes: bytes, key: str, resume_url: str):
     await anyio.to_thread.run_sync(upload_pdf_bytes, file_bytes, key)
     await update_portfolio_by_user_id(portfolio_data=PortfolioUpdate(resumeUrl=resume_url), user_id=user_id)
@@ -339,7 +423,7 @@ async def apply_portfolio_suggestions(
     updates = {}
     for item in payload.updates:
         item.value = _maybe_parse_json(item.value)
-        updates[_field_path_to_mongo(item.field)] = item.value
+        updates[_field_path_to_mongo(item.field)] = _normalize_update(item.field, item.value)
 
     updates["last_updated"] = int(time.time())
 
