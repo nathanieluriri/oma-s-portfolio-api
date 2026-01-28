@@ -22,6 +22,7 @@ from services.portfolio_service import (
     retrieve_portfolio_by_user_id,
     update_portfolio_by_user_id,
 )
+from services.revalidate_service import trigger_portfolio_revalidate
 
 router = APIRouter(prefix="/portfolios", tags=["Portfolios"])
 
@@ -29,6 +30,7 @@ router = APIRouter(prefix="/portfolios", tags=["Portfolios"])
 async def _upload_resume_and_update(user_id: str, file_bytes: bytes, key: str, resume_url: str):
     await anyio.to_thread.run_sync(upload_pdf_bytes, file_bytes, key)
     await update_portfolio_by_user_id(portfolio_data=PortfolioUpdate(resumeUrl=resume_url), user_id=user_id)
+    await trigger_portfolio_revalidate()
 
 # ------------------------------
 # Retrieve a single Portfolio
@@ -58,6 +60,7 @@ async def get_portfolio_by_user_id(
 )
 async def create_portfolio(
     payload: PortfolioBase,
+    background_tasks: BackgroundTasks,
     token: accessTokenOut = Depends(verify_token),
 ):
     """
@@ -69,6 +72,7 @@ async def create_portfolio(
     if not new_item:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to create portfolio")
     
+    background_tasks.add_task(trigger_portfolio_revalidate)
     return APIResponse(status_code=201, data=new_item, detail=f"Portfolio created successfully")
 
 
@@ -83,6 +87,7 @@ async def create_portfolio(
 )
 async def update_portfolio(
     payload: PortfolioUpdate ,
+    background_tasks: BackgroundTasks,
     token: accessTokenOut = Depends(verify_token),
 ):
     """
@@ -93,6 +98,7 @@ async def update_portfolio(
     if not updated_item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Portfolio not found or update failed")
     
+    background_tasks.add_task(trigger_portfolio_revalidate)
     return APIResponse(status_code=200, data=updated_item, detail=f"Portfolio updated successfully")
 
 
@@ -105,6 +111,7 @@ async def update_portfolio(
     dependencies=[Depends(verify_token), Depends(check_user_account_status_and_permissions)],
 )
 async def delete_portfolio(
+    background_tasks: BackgroundTasks,
     token: accessTokenOut = Depends(verify_token),
 ):
     """
@@ -116,6 +123,7 @@ async def delete_portfolio(
         # to indicate if deletion was successful (i.e., item was found).
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Portfolio not found or deletion failed")
     
+    background_tasks.add_task(trigger_portfolio_revalidate)
     return APIResponse(status_code=200, data=None, detail=f"Portfolio deleted successfully")
 
 
