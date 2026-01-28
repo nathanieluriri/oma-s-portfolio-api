@@ -15,6 +15,7 @@ from repositories.portfolio import (
     get_portfolio,
     get_portfolios,
     update_portfolio,
+    update_portfolio_fields,
     delete_portfolio,
 )
 from schemas.portfolio import PortfolioCreate, PortfolioUpdate, PortfolioOut
@@ -119,6 +120,13 @@ async def update_portfolio_by_id(portfolio_id: str, portfolio_data: PortfolioUpd
 
 async def update_portfolio_by_user_id(portfolio_data: PortfolioUpdate, user_id: str) -> PortfolioOut:
     result = await update_portfolio({"user_id": user_id}, portfolio_data)
+    if not result:
+        raise HTTPException(status_code=404, detail="Portfolio not found or update failed")
+    return result
+
+
+async def update_portfolio_fields_by_user_id(updates: dict, user_id: str) -> PortfolioOut:
+    result = await update_portfolio_fields({"user_id": user_id}, updates)
     if not result:
         raise HTTPException(status_code=404, detail="Portfolio not found or update failed")
     return result

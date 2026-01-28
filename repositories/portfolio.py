@@ -70,3 +70,16 @@ async def update_portfolio(filter_dict: dict, portfolio_data: PortfolioUpdate) -
 
 async def delete_portfolio(filter_dict: dict):
     return await db.portfolios.delete_one(filter_dict)
+
+
+async def update_portfolio_fields(filter_dict: dict, updates: dict) -> Optional[PortfolioOut]:
+    if not updates:
+        return None
+    result = await db.portfolios.find_one_and_update(
+        filter_dict,
+        {"$set": updates},
+        return_document=ReturnDocument.AFTER,
+    )
+    if result is None:
+        return None
+    return PortfolioOut(**result)

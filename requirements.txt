@@ -1,6 +1,9 @@
 fastapi[all]
 requests
 httpx
+openai
+pypdf
+python-docx
 boto3
 pyjwt
 dotenv==0.9.9

@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query, Path, status, Depends, BackgroundTasks, UploadFile, File
 from typing import List, Optional
 import json
+import time
 import uuid
 import anyio
 from schemas.response_schema import APIResponse
@@ -12,6 +13,10 @@ from schemas.portfolio import (
     PortfolioBase,
     PortfolioUpdate,
 )
+from schemas.portfolio_suggestions import (
+    AnalyzePortfolioResponse,
+    ApplySuggestionsRequest,
+)
 from security.auth import verify_token
 from security.account_status_check import check_user_account_status_and_permissions
 from services.r2_service import get_r2_settings, build_public_url, upload_pdf_bytes
@@ -21,10 +26,95 @@ from services.portfolio_service import (
     retrieve_portfolios,
     retrieve_portfolio_by_user_id,
     update_portfolio_by_user_id,
+    update_portfolio_fields_by_user_id,
 )
 from services.revalidate_service import trigger_portfolio_revalidate
+from services.document_service import process_portfolio_document
+from services.ai_portfolio_suggestions import generate_portfolio_suggestions
 
 router = APIRouter(prefix="/portfolios", tags=["Portfolios"])
+
+
+ALLOWED_PORTFOLIO_PREFIXES = {
+    "navItems",
+    "footer",
+    "hero",
+    "experience",
+    "projects",
+    "skillGroups",
+    "contacts",
+    "theme",
+    "animations",
+    "metadata",
+    "resumeUrl",
+}
+
+
+def _path_to_tokens(path: str) -> list:
+    tokens = []
+    buffer = ""
+    idx = 0
+    while idx < len(path):
+        char = path[idx]
+        if char == ".":
+            if buffer:
+                tokens.append(buffer)
+                buffer = ""
+            idx += 1
+            continue
+        if char == "[":
+            if buffer:
+                tokens.append(buffer)
+                buffer = ""
+            end = path.find("]", idx)
+            if end == -1:
+                raise ValueError("Invalid field path")
+            index = path[idx + 1 : end]
+            if not index.isdigit():
+                raise ValueError("Invalid array index in field path")
+            tokens.append(int(index))
+            idx = end + 1
+            continue
+        buffer += char
+        idx += 1
+    if buffer:
+        tokens.append(buffer)
+    return tokens
+
+
+def _field_path_to_mongo(path: str) -> str:
+    tokens = _path_to_tokens(path)
+    mongo_parts = []
+    for token in tokens:
+        if isinstance(token, int):
+            mongo_parts.append(str(token))
+        else:
+            mongo_parts.append(token)
+    return ".".join(mongo_parts)
+
+
+def _read_value_at_path(data: dict, path: str):
+    tokens = _path_to_tokens(path)
+    current = data
+    for token in tokens:
+        if isinstance(token, int):
+            if not isinstance(current, list) or token >= len(current):
+                return None
+            current = current[token]
+        else:
+            if not isinstance(current, dict) or token not in current:
+                return None
+            current = current[token]
+    return current
+
+
+def _validate_update_fields(paths: list[str]) -> None:
+    for path in paths:
+        if not path or not isinstance(path, str):
+            raise ValueError("Invalid update field")
+        base = path.split(".", 1)[0].split("[", 1)[0]
+        if base not in ALLOWED_PORTFOLIO_PREFIXES:
+            raise ValueError(f"Update field not allowed: {path}")
 
 
 async def _upload_resume_and_update(user_id: str, file_bytes: bytes, key: str, resume_url: str):
@@ -167,4 +257,84 @@ async def upload_resume(
         status_code=202,
         data={"resumeUrl": resume_url},
         detail="Resume upload queued",
+    )
+
+
+@router.post(
+    "/analyze",
+    response_model=APIResponse[AnalyzePortfolioResponse],
+    dependencies=[Depends(verify_token), Depends(check_user_account_status_and_permissions)],
+)
+async def analyze_portfolio_document(
+    file: UploadFile = File(...),
+    token: accessTokenOut = Depends(verify_token),
+):
+    try:
+        extracted_text, file_url = await process_portfolio_document(file, token.userId)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+    current_portfolio = await retrieve_portfolio_by_user_id(user_id=token.userId)
+    try:
+        suggestions = generate_portfolio_suggestions(
+            extracted_text,
+            current_portfolio.model_dump(),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI suggestion generation failed: {exc}",
+        )
+
+    return APIResponse(
+        status_code=200,
+        data=AnalyzePortfolioResponse(fileUrl=file_url, suggestions=suggestions),
+        detail="Portfolio analysis complete",
+    )
+
+
+@router.post(
+    "/apply",
+    response_model=APIResponse[PortfolioOut],
+    dependencies=[Depends(verify_token), Depends(check_user_account_status_and_permissions)],
+)
+async def apply_portfolio_suggestions(
+    payload: ApplySuggestionsRequest,
+    background_tasks: BackgroundTasks,
+    token: accessTokenOut = Depends(verify_token),
+):
+    _validate_update_fields([item.field for item in payload.updates])
+
+    current_portfolio = await retrieve_portfolio_by_user_id(user_id=token.userId)
+    current_data = current_portfolio.model_dump()
+
+    conflicts = []
+    for item in payload.updates:
+        if item.expectedCurrent is None:
+            continue
+        current_value = _read_value_at_path(current_data, item.field)
+        if current_value != item.expectedCurrent:
+            conflicts.append({"field": item.field, "currentValue": current_value})
+
+    if conflicts:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Conflicts detected: {conflicts}",
+        )
+
+    updates = {}
+    for item in payload.updates:
+        updates[_field_path_to_mongo(item.field)] = item.value
+
+    updates["last_updated"] = int(time.time())
+
+    updated_item = await update_portfolio_fields_by_user_id(updates, user_id=token.userId)
+    background_tasks.add_task(trigger_portfolio_revalidate)
+
+    return APIResponse(
+        status_code=200,
+        data=updated_item,
+        detail="Portfolio updated from suggestions",
     )
