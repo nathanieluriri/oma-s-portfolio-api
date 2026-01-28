@@ -117,6 +117,17 @@ def _validate_update_fields(paths: list[str]) -> None:
             raise ValueError(f"Update field not allowed: {path}")
 
 
+def _maybe_parse_json(value):
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if trimmed.startswith("{") or trimmed.startswith("["):
+            try:
+                return json.loads(trimmed)
+            except Exception:
+                return value
+    return value
+
+
 async def _upload_resume_and_update(user_id: str, file_bytes: bytes, key: str, resume_url: str):
     await anyio.to_thread.run_sync(upload_pdf_bytes, file_bytes, key)
     await update_portfolio_by_user_id(portfolio_data=PortfolioUpdate(resumeUrl=resume_url), user_id=user_id)
@@ -312,6 +323,7 @@ async def apply_portfolio_suggestions(
 
     conflicts = []
     for item in payload.updates:
+        item.expectedCurrent = _maybe_parse_json(item.expectedCurrent)
         if item.expectedCurrent is None:
             continue
         current_value = _read_value_at_path(current_data, item.field)
@@ -326,6 +338,7 @@ async def apply_portfolio_suggestions(
 
     updates = {}
     for item in payload.updates:
+        item.value = _maybe_parse_json(item.value)
         updates[_field_path_to_mongo(item.field)] = item.value
 
     updates["last_updated"] = int(time.time())
