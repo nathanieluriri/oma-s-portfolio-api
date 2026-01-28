@@ -7,7 +7,6 @@ import celery_aio_pool as aio_pool
 
 from core.task import ASYNC_TASK_REGISTRY
 
-
 load_dotenv()
 
 broker_url = os.getenv("CELERY_BROKER_URL")
