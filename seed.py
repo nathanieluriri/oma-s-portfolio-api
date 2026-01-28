@@ -234,17 +234,22 @@ def build_portfolio_payload(user_id: str) -> dict:
     }
 
 
-def seed_portfolio(user_id: str) -> None:
+def load_settings() -> tuple[str, str, set[str]]:
     if load_dotenv:
         load_dotenv()
     else:
         load_env_file()
     mongo_url = os.getenv("MONGO_URL", "mongodb://localhost:27017/")
     db_name = os.getenv("DB_NAME", "OmaPortfolio")
+    allowed_emails = {
+        email.strip().lower()
+        for email in os.getenv("ALLOWED_GOOGLE_EMAILS", "").split(",")
+        if email.strip()
+    }
+    return mongo_url, db_name, allowed_emails
 
-    client = MongoClient(mongo_url)
-    collection = client[db_name]["portfolios"]
 
+def seed_portfolio_for_user_id(collection, user_id: str) -> None:
     payload = build_portfolio_payload(user_id)
     now = int(time.time())
 
@@ -260,11 +265,41 @@ def seed_portfolio(user_id: str) -> None:
     print(f"Seeded portfolio for user_id={user_id}")
 
 
+def seed_portfolios_for_allowed_emails(collection, users_collection, allowed_emails: set[str]) -> None:
+    if not allowed_emails:
+        print("No allowed emails configured; nothing to seed.")
+        return
+
+    for email in sorted(allowed_emails):
+        user = users_collection.find_one({"email": email})
+        if not user:
+            print(f"Skipping {email}: no matching user found.")
+            continue
+        user_id = str(user.get("_id"))
+        if not user_id:
+            print(f"Skipping {email}: user_id missing.")
+            continue
+        seed_portfolio_for_user_id(collection, user_id)
+
+
 if __name__ == "__main__":
     default_user_id = "697a3a30fa806c842c24d553"
-    user_id = (
-        os.getenv("SEED_USER_ID")
-        or (os.sys.argv[1] if len(os.sys.argv) > 1 else "")
-        or default_user_id
-    )
-    seed_portfolio(user_id)
+    mongo_url, db_name, allowed_emails = load_settings()
+    client = MongoClient(mongo_url)
+    db = client[db_name]
+    portfolios = db["portfolios"]
+    users = db["users"]
+
+    seed_all_allowed = os.getenv("SEED_ALL_ALLOWED_EMAILS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }
+    arg = os.sys.argv[1] if len(os.sys.argv) > 1 else ""
+
+    if arg in {"--allowed-emails", "--allowed"} or seed_all_allowed:
+        seed_portfolios_for_allowed_emails(portfolios, users, allowed_emails)
+    else:
+        user_id = os.getenv("SEED_USER_ID") or arg or default_user_id
+        seed_portfolio_for_user_id(portfolios, user_id)
