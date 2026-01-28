@@ -1,5 +1,5 @@
 from schemas.imports import *
-from pydantic import Field
+from pydantic import Field, field_validator
 import time
 from security.hash import hash_password
 class UserBase(BaseModel):

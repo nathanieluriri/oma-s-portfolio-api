@@ -80,6 +80,13 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
     
     
     
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 # Create the FastAPI app
 app = FastAPI(
     
@@ -88,7 +95,19 @@ app = FastAPI(
     
 )
 app.add_middleware(RequestTimingMiddleware)
-app.add_middleware(SessionMiddleware, secret_key="some-random-string")
+session_secret = os.getenv("SESSION_SECRET") or "dev-insecure-change-me"
+session_cookie_name = os.getenv("SESSION_COOKIE_NAME", "session")
+session_cookie_samesite = os.getenv("SESSION_COOKIE_SAMESITE", "lax")
+session_cookie_secure = env_bool("SESSION_COOKIE_SECURE", False)
+session_cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN") or None
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=session_secret,
+    session_cookie=session_cookie_name,
+    same_site=session_cookie_samesite,
+    https_only=session_cookie_secure,
+    domain=session_cookie_domain,
+)
 redis_url = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL") \
     or f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', '6379')}/0"
 

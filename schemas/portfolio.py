@@ -43,11 +43,32 @@ class ExperienceEntry(BaseModel):
     highlights: List[str] = Field(default_factory=list)
     current: bool = False
 
+class ProjectRole(BaseModel):
+    title: str = "Full-Stack Engineer"
+    bullets: List[str] = Field(default_factory=list)
+
+class ProjectScreenshot(BaseModel):
+    src: str
+    alt: str = ""
+    caption: Optional[str] = None
+
+class ProjectCaseStudy(BaseModel):
+    overview: str = ""
+    goal: str = ""
+    role: ProjectRole = Field(default_factory=ProjectRole)
+    screenshots: List[ProjectScreenshot] = Field(default_factory=list)
+    outcomes: List[str] = Field(default_factory=list)
+
 class ProjectEntry(BaseModel):
     title: str
     tags: List[str] = Field(default_factory=list)
     description: str
     link: str
+    caseStudy: ProjectCaseStudy = Field(
+        default_factory=ProjectCaseStudy,
+        validation_alias=AliasChoices("caseStudy", "case_study"),
+        serialization_alias="caseStudy",
+    )
 
 class SkillGroup(BaseModel):
     title: str
@@ -96,7 +117,7 @@ class PortfolioBase(BaseModel):
             {"href": "/#tools", "label": "tools"},
             {"href": "/#contact", "label": "contact"},
         ]
-    )
+    ) # type: ignore
     footer: FooterContent = Field(default_factory=FooterContent)
     hero: HeroSection = Field(default_factory=HeroSection)
     experience: List[ExperienceEntry] = Field(
@@ -115,7 +136,7 @@ class PortfolioBase(BaseModel):
                 "current": True,
             }
         ]
-    )
+    ) # type: ignore
     projects: List[ProjectEntry] = Field(
         default_factory=lambda: [
             {
@@ -125,7 +146,7 @@ class PortfolioBase(BaseModel):
                 "link": "/projects/signalforge",
             }
         ]
-    )
+    ) # type: ignore
     skillGroups: List[SkillGroup] = Field(
         default_factory=lambda: [
             {
@@ -137,7 +158,7 @@ class PortfolioBase(BaseModel):
                 "items": ["Docker", "Kubernetes", "AWS", "Terraform", "Grafana", "Prometheus", "GitHub Actions", "Vercel"],
             },
         ]
-    )
+    ) # type: ignore
     contacts: List[ContactEntry] = Field(
         default_factory=lambda: [
             {"label": "Email", "value": "hello@oma.com", "href": "mailto:hello@oma.com", "icon": None},
@@ -145,7 +166,7 @@ class PortfolioBase(BaseModel):
             {"label": "LinkedIn", "value": "linkedin.com/in/oma", "href": "https://linkedin.com/in/oma", "icon": None},
             {"label": "Location", "value": "Remote", "href": "#", "icon": None},
         ]
-    )
+    ) # type: ignore
     theme: ThemeColors = Field(default_factory=ThemeColors)
     animations: AnimationSettings = Field(default_factory=AnimationSettings)
     metadata: Metadata = Field(default_factory=Metadata)
