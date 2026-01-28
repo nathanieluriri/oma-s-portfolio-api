@@ -36,8 +36,8 @@ load_dotenv()
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-SUCCESS_PAGE_URL = os.getenv("SUCCESS_PAGE_URL", "http://localhost:3000/admin/success")
-ERROR_PAGE_URL   = os.getenv("ERROR_PAGE_URL",   "http://localhost:3000/admin/error")
+SUCCESS_PAGE_URL = os.getenv("SUCCESS_PAGE_URL", "https://omas-portfolio-frontend.vercel.app/admin/success")
+ERROR_PAGE_URL   = os.getenv("ERROR_PAGE_URL",   "https://omas-portfolio-frontend.vercel.app/admin/error")
 ALLOWED_GOOGLE_EMAILS = {
     email.strip().lower()
     for email in os.getenv("ALLOWED_GOOGLE_EMAILS", "").split(",")
@@ -50,12 +50,12 @@ async def login_with_google_account(request: Request):
     redirect_uri = request.url_for("auth_callback_user")
     print("REDIRECT URI:", redirect_uri)
  
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    return await oauth.google.authorize_redirect(request, redirect_uri) # type: ignore
 
 # --- Step 2: Handle callback from Google ---
 @router.get("/auth/callback")
 async def auth_callback_user(request: Request):
-    token = await oauth.google.authorize_access_token(request)
+    token = await oauth.google.authorize_access_token(request) # type: ignore
     user_info = token.get('userinfo')
 
     # Just print or return user info for now
