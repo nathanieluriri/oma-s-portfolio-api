@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose port
-EXPOSE 7860
+EXPOSE 7850
 
 # Default command for web (can be overridden by Render)
-CMD ["gunicorn", "-w", "20", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:7860", "--timeout", "120", "--graceful-timeout", "30", "main:app"]
+CMD ["gunicorn", "-w", "20", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:7850", "--timeout", "120", "--graceful-timeout", "30", "main:app"]

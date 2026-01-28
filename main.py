@@ -19,6 +19,7 @@ from pymongo import MongoClient
 import redis
 from apscheduler.triggers.interval import IntervalTrigger
 from starlette.middleware.sessions import SessionMiddleware
+from core.database import DB_TYPE, db
 
 MONGO_URI = os.getenv("MONGO_URL")
 REDIS_URI = f"redis://{os.getenv('REDIS_HOST', '127.0.0.1')}:{os.getenv('REDIS_PORT', '6379')}/0"
@@ -46,6 +47,12 @@ async def lifespan(app:FastAPI):
 
     scheduler.start()
     try:
+        if DB_TYPE == "mongodb":
+            await db.portfolios.create_index(
+                [("user_id", 1)],
+                unique=True,
+                name="unique_portfolio_user_id",
+            )
         yield
     finally:
         scheduler.shutdown()
@@ -106,7 +113,7 @@ async def get_user_type(request: Request) -> tuple[str, str]:
     """
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
-        ip_address = request.headers.get("X-Forwarded-For", request.client.host)
+        ip_address = request.headers.get("X-Forwarded-For", request.client.host) # pyright: ignore[reportOptionalMemberAccess]
         user_id = ip_address
         user_type="annonymous"
         return user_id, user_type if user_type in RATE_LIMITS else "annonymous"
@@ -115,7 +122,7 @@ async def get_user_type(request: Request) -> tuple[str, str]:
     token = auth_header.split(" ")[1] 
     access_token = await get_access_token_allow_expired(accessToken=token)
     if not access_token:
-        ip_address = request.headers.get("X-Forwarded-For", request.client.host)
+        ip_address = request.headers.get("X-Forwarded-For", request.client.host) # pyright: ignore[reportOptionalMemberAccess]
         user_id = ip_address
         user_type = "annonymous"
         return user_id, user_type if user_type in RATE_LIMITS else "annonymous"
@@ -216,7 +223,7 @@ mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
 redis_client = redis.Redis.from_url(REDIS_URI, socket_connect_timeout=2)
 # Health check route
 @app.get("/health",tags=["Health"])
-async def health_check():
+async def health_check_():
     overall_status = "healthy"
     services = {}
 
@@ -264,7 +271,7 @@ async def health_check():
     try:
         aps_heartbeat = redis_client.get("apscheduler:heartbeat")
         if aps_heartbeat:
-            last_seen = float(aps_heartbeat)
+            last_seen = float(aps_heartbeat) # pyright: ignore[reportArgumentType]
             age = time.time() - last_seen
             if age <= 30:
                 services["apscheduler"] = {
@@ -404,7 +411,7 @@ async def health_check():
         latency = round((time.perf_counter() - start_time) * 1000, 2) # Latency of the check itself
         
         if aps_heartbeat:
-            last_seen = float(aps_heartbeat)
+            last_seen = float(aps_heartbeat) # pyright: ignore[reportArgumentType]
             age = time.time() - last_seen
             
             if age <= 30: # Healthy if heartbeat is within 30 seconds
@@ -510,11 +517,9 @@ async def health_check():
     )
 
 # --- auto-routes-start ---
-from api.v1.admin_route import router as v1_admin_route_router
- 
+from api.v1.portfolio import router as v1_portfolio_router
 from api.v1.user_route import router as v1_user_route_router
 
-app.include_router(v1_admin_route_router, prefix='/v1')
- 
+app.include_router(v1_portfolio_router, prefix='/v1')
 app.include_router(v1_user_route_router, prefix='/v1')
 # --- auto-routes-end ---

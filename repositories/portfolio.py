@@ -63,6 +63,8 @@ async def update_portfolio(filter_dict: dict, portfolio_data: PortfolioUpdate) -
         {"$set": portfolio_data.model_dump(exclude_none=True)},
         return_document=ReturnDocument.AFTER
     )
+    if result is None:
+        return None
     returnable_result = PortfolioOut(**result)
     return returnable_result
 

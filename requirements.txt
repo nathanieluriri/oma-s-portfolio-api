@@ -1,5 +1,6 @@
 fastapi[all]
 requests
+boto3
 pyjwt
 dotenv==0.9.9
 uvicorn

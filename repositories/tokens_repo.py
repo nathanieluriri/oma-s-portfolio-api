@@ -6,7 +6,6 @@ from datetime import datetime, timezone, timedelta
 from dateutil import parser
 from bson import ObjectId,errors
 from fastapi import HTTPException
-from repositories.admin_repo import get_admin
 from security.encrypting_jwt import decode_jwt_token, decode_jwt_token_without_expiration
 
 async def add_access_tokens(token_data:accessTokenCreate)->accessTokenOut:
@@ -19,20 +18,7 @@ async def add_access_tokens(token_data:accessTokenCreate)->accessTokenOut:
     return accessToken 
     
 
-async def add_admin_access_tokens(token_data:accessTokenCreate)->accessTokenOut:
-    token = token_data.model_dump()
-    token['role']="admin"
-    token['status']="active"
-    result = await db.accessToken.insert_one(token)
-    tokn = await db.accessToken.find_one({"_id":result.inserted_id})
-    accessToken = accessTokenOut(**tokn)
-    
-    return accessToken 
 
-async def update_admin_access_tokens(token:str)->accessTokenOut:
-    updatedToken= await db.accessToken.find_one_and_update(filter={"_id":ObjectId(token)},update={"$set": {'status':'active'}},return_document=True)
-    accessToken = accessTokenOut(**updatedToken)
-    return accessToken
     
 async def add_refresh_tokens(token_data:refreshTokenCreate)->refreshTokenOut:
     token = token_data.model_dump()
@@ -116,20 +102,6 @@ async def get_access_tokens(accessToken: str) -> accessTokenOut | None:
     return await get_access_token(accessToken=accessToken, allow_expired=False)
     
     
-    
-async def get_admin_access_tokens(accessToken: str) -> accessTokenOut | None:
-    token = await get_access_token(accessToken=accessToken, allow_expired=False)
-    if not token or token.role != "admin":
-        return None
-
-    user_id = token.userId
-    if not user_id:
-        return None
-
-    if await get_admin(filter_dict={"_id": ObjectId(user_id)}):
-        return token
-    return None
-
 
 async def get_inactive_access_token(token_id: str) -> accessTokenOut | None:
     try:
@@ -167,6 +139,3 @@ async def delete_all_tokens_with_user_id(userId:str):
     await db.refreshToken.delete_many(filter={"userId":userId})
     await db.accessToken.delete_many(filter={"userId":userId})
     
-async def delete_all_tokens_with_admin_id(adminId:str):
-    await db.refreshToken.delete_many(filter={"userId":adminId})
-    await db.accessToken.delete_many(filter={"userId":adminId})

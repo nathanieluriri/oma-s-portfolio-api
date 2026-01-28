@@ -36,8 +36,13 @@ load_dotenv()
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-SUCCESS_PAGE_URL = os.getenv("SUCCESS_PAGE_URL", "http://localhost:8080/success")
-ERROR_PAGE_URL   = os.getenv("ERROR_PAGE_URL",   "http://localhost:8080/error")
+SUCCESS_PAGE_URL = os.getenv("SUCCESS_PAGE_URL", "http://localhost:3000/admin/success")
+ERROR_PAGE_URL   = os.getenv("ERROR_PAGE_URL",   "http://localhost:3000/admin/error")
+ALLOWED_GOOGLE_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("ALLOWED_GOOGLE_EMAILS", "").split(",")
+    if email.strip()
+}
 
 # --- Step 1: Redirect user to Google login ---
 @router.get("/google/auth")
@@ -56,6 +61,13 @@ async def auth_callback_user(request: Request):
     # Just print or return user info for now
     if user_info:
         print("✅ Google user info:", user_info)
+        email = (user_info.get("email") or "").strip().lower()
+        if not email:
+            raise HTTPException(status_code=400, detail="No email found for Google user")
+        if not ALLOWED_GOOGLE_EMAILS:
+            raise HTTPException(status_code=500, detail="Allowed Google emails not configured")
+        if email not in ALLOWED_GOOGLE_EMAILS:
+            raise HTTPException(status_code=403, detail="Email not authorized")
         rider = UserBase(firstName=user_info['name'],password='',lastName=user_info['given_name'],email=user_info['email'],loginType=LoginType.google)
         data = await authenticate_user_google(user_data=rider)
         access_token = data.access_token
@@ -71,17 +83,6 @@ async def auth_callback_user(request: Request):
         raise HTTPException(status_code=400,detail={"status": "failed", "message": "No user info found"})
 
 @router.get(
-    "/",
-    response_model_exclude={"data": {"__all__": {"password"}}},
-    response_model=APIResponse[List[UserOut]],
-    response_model_exclude_none=True,
-    dependencies=[Depends(verify_token), Depends(check_user_account_status_and_permissions)],
-)
-async def list_users(start:int= 0, stop:int=100):
-    items = await retrieve_users(start=0,stop=100)
-    return APIResponse(status_code=200, data=items, detail="Fetched successfully")
-
-@router.get(
     "/me",
     response_model_exclude={"data": {"password"}},
     response_model=APIResponse[UserOut],
@@ -94,17 +95,10 @@ async def get_my_users(token:accessTokenOut = Depends(verify_token)):
 
 
 
-@router.post("/signup", response_model_exclude={"data": {"password"}},response_model=APIResponse[UserOut])
-async def signup_new_user(user_data:UserBase):
-    new_user = UserCreate(**user_data.model_dump())
-    items = await add_user(user_data=new_user)
-    return APIResponse(status_code=200, data=items, detail="Fetched successfully")
-
-
-@router.post("/login",response_model_exclude={"data": {"password"}}, response_model=APIResponse[UserOut])
-async def login_user(user_data:UserBase):
-    items = await authenticate_user(user_data=user_data)
-    return APIResponse(status_code=200, data=items, detail="Fetched successfully")
+# @router.post("/login",response_model_exclude={"data": {"password"}}, response_model=APIResponse[UserOut])
+# async def login_user(user_data:UserBase):
+#     items = await authenticate_user(user_data=user_data)
+#     return APIResponse(status_code=200, data=items, detail="Fetched successfully")
 
 
 @router.post("/refresh",response_model_exclude={"data": {"password"}},response_model=APIResponse[UserOut],dependencies=[Depends(verify_token_to_refresh)])
@@ -115,7 +109,3 @@ async def refresh_user_tokens(user_data:UserRefresh,token:accessTokenOut = Depen
     return APIResponse(status_code=200, data=items, detail="users items fetched")
 
 
-@router.delete("/account",dependencies=[Depends(verify_token), Depends(check_user_account_status_and_permissions)])
-async def delete_user_account(token:accessTokenOut = Depends(verify_token)):
-    result = await remove_user(user_id=token.userId)
-    return result

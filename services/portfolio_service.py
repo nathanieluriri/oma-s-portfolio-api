@@ -20,16 +20,19 @@ from repositories.portfolio import (
 from schemas.portfolio import PortfolioCreate, PortfolioUpdate, PortfolioOut
 
 
-async def add_portfolio(portfolio_data: PortfolioCreate) -> PortfolioOut:
+async def add_portfolio(portfolio_data: PortfolioCreate, user_id: str) -> PortfolioOut:
     """adds an entry of PortfolioCreate to the database and returns an object
 
     Returns:
         _type_: PortfolioOut
     """
+    existing = await get_portfolio({"user_id": user_id})
+    if existing:
+        raise HTTPException(status_code=409, detail="Portfolio already exists for this user")
     return await create_portfolio(portfolio_data)
 
 
-async def remove_portfolio(portfolio_id: str):
+async def remove_portfolio(portfolio_id: str, user_id: str):
     """deletes a field from the database and removes PortfolioCreateobject 
 
     Raises:
@@ -39,13 +42,19 @@ async def remove_portfolio(portfolio_id: str):
     if not ObjectId.is_valid(portfolio_id):
         raise HTTPException(status_code=400, detail="Invalid portfolio ID format")
 
-    filter_dict = {"_id": ObjectId(portfolio_id)}
+    filter_dict = {"_id": ObjectId(portfolio_id), "user_id": user_id}
     result = await delete_portfolio(filter_dict)
 
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Portfolio not found")
 
     else: return True
+
+async def remove_portfolio_by_user_id(user_id: str):
+    result = await delete_portfolio({"user_id": user_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    return True
     
 async def retrieve_portfolio_by_portfolio_id(id: str) -> PortfolioOut:
     """Retrieves portfolio object based specific Id 
@@ -68,6 +77,15 @@ async def retrieve_portfolio_by_portfolio_id(id: str) -> PortfolioOut:
 
     return result
 
+async def retrieve_portfolio_by_user_id(user_id: str) -> PortfolioOut:
+    """Retrieves portfolio object based on user_id."""
+    result = await get_portfolio({"user_id": user_id})
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    return result
+
 
 async def retrieve_portfolios(start=0,stop=100) -> List[PortfolioOut]:
     """Retrieves PortfolioOut Objects in a list
@@ -78,7 +96,7 @@ async def retrieve_portfolios(start=0,stop=100) -> List[PortfolioOut]:
     return await get_portfolios(start=start,stop=stop)
 
 
-async def update_portfolio_by_id(portfolio_id: str, portfolio_data: PortfolioUpdate) -> PortfolioOut:
+async def update_portfolio_by_id(portfolio_id: str, portfolio_data: PortfolioUpdate, user_id: str) -> PortfolioOut:
     """updates an entry of portfolio in the database
 
     Raises:
@@ -91,10 +109,16 @@ async def update_portfolio_by_id(portfolio_id: str, portfolio_data: PortfolioUpd
     if not ObjectId.is_valid(portfolio_id):
         raise HTTPException(status_code=400, detail="Invalid portfolio ID format")
 
-    filter_dict = {"_id": ObjectId(portfolio_id)}
+    filter_dict = {"_id": ObjectId(portfolio_id), "user_id": user_id}
     result = await update_portfolio(filter_dict, portfolio_data)
 
     if not result:
         raise HTTPException(status_code=404, detail="Portfolio not found or update failed")
 
+    return result
+
+async def update_portfolio_by_user_id(portfolio_data: PortfolioUpdate, user_id: str) -> PortfolioOut:
+    result = await update_portfolio({"user_id": user_id}, portfolio_data)
+    if not result:
+        raise HTTPException(status_code=404, detail="Portfolio not found or update failed")
     return result

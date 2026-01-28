@@ -23,18 +23,6 @@ async def generate_member_access_tokens(userId)->accessTokenOut:
 
 
 
-async def generate_admin_access_tokens(userId)->accessTokenOut:
-    from repositories.tokens_repo import add_admin_access_tokens
-
-    try:
-        obj_id = ObjectId(userId)
-    except errors.InvalidId:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid User Id")    # or raise an error / log it    
-
-    new_access_token = await add_admin_access_tokens(token_data=accessTokenCreate(userId=userId))
-    new_access_token.accesstoken = await create_jwt_admin_token(token=new_access_token.accesstoken,userId=userId)
-    return new_access_token
-    
     
     
 async def generate_refresh_tokens(userId,accessToken)->refreshTokenOut:
