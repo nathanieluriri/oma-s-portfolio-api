@@ -72,7 +72,7 @@ async def delete_portfolio(filter_dict: dict):
     return await db.portfolios.delete_one(filter_dict)
 
 
-async def update_portfolio_fields(filter_dict: dict, updates: dict) -> Optional[PortfolioOut]:
+async def update_portfolio_fields(filter_dict: dict, updates: dict) -> Optional[dict]:
     if not updates:
         return None
     result = await db.portfolios.find_one_and_update(
@@ -82,4 +82,15 @@ async def update_portfolio_fields(filter_dict: dict, updates: dict) -> Optional[
     )
     if result is None:
         return None
-    return PortfolioOut(**result)
+    return result
+
+
+async def get_portfolio_raw(filter_dict: dict) -> Optional[dict]:
+    try:
+        result = await db.portfolios.find_one(filter_dict)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching portfolio: {str(e)}",
+        )
