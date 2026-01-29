@@ -35,7 +35,13 @@ from services.portfolio_service import (
 from services.revalidate_service import trigger_portfolio_revalidate
 from services.document_service import process_portfolio_document
 from services.ai_portfolio_suggestions import generate_portfolio_suggestions
-from services.portfolio_normalization import normalize_update
+from services.portfolio_normalization import (
+    normalize_update,
+    normalize_contact_entry,
+    normalize_experience_entry,
+    normalize_project_entry,
+    normalize_skill_group,
+)
 
 router = APIRouter(prefix="/portfolios", tags=["Portfolios"])
 
@@ -250,6 +256,24 @@ def _prune_root_updates_with_children(updates: list[ApplySuggestionItem]) -> lis
     return pruned
 
 
+def _prune_parent_index_updates(updates: list[ApplySuggestionItem]) -> list[ApplySuggestionItem]:
+    parent_index_fields: set[str] = set()
+    for item in updates:
+        tokens = _path_to_tokens(item.field)
+        if len(tokens) == 2 and isinstance(tokens[1], int) and tokens[0] in _LIST_FIELDS:
+            parent_index_fields.add(item.field)
+    if not parent_index_fields:
+        return updates
+    pruned: list[ApplySuggestionItem] = []
+    for item in updates:
+        tokens = _path_to_tokens(item.field)
+        if len(tokens) > 2 and isinstance(tokens[1], int) and tokens[0] in _LIST_FIELDS:
+            if f"{tokens[0]}[{tokens[1]}]" in parent_index_fields:
+                continue
+        pruned.append(item)
+    return pruned
+
+
 def _validate_update_fields(paths: list[str]) -> None:
     for path in paths:
         if not path or not isinstance(path, str):
@@ -293,6 +317,31 @@ def _coerce_list_field(field: str, value):
                 detail=f"Invalid JSON list for field '{field}'",
             )
         return parsed
+    return value
+
+
+def _map_field_aliases(field: str) -> str:
+    if field.endswith(".organization"):
+        return field.replace(".organization", ".company")
+    if field.endswith(".position"):
+        return field.replace(".position", ".role")
+    if field.endswith(".name") and field.startswith("projects["):
+        return field.replace(".name", ".title")
+    return field
+
+
+def _normalize_indexed_update(field: str, value):
+    tokens = _path_to_tokens(field)
+    if len(tokens) != 2 or not isinstance(tokens[1], int):
+        return value
+    if tokens[0] == "contacts" and isinstance(value, dict):
+        return normalize_contact_entry(value)
+    if tokens[0] == "experience" and isinstance(value, dict):
+        return normalize_experience_entry(value)
+    if tokens[0] == "projects" and isinstance(value, dict):
+        return normalize_project_entry(value)
+    if tokens[0] == "skillGroups" and isinstance(value, dict):
+        return normalize_skill_group(value)
     return value
 
 
@@ -519,6 +568,7 @@ async def apply_portfolio_suggestions(
 ):
     payload.updates = _expand_contact_legacy_updates(payload.updates)
     payload.updates = _prune_root_updates_with_children(payload.updates)
+    payload.updates = _prune_parent_index_updates(payload.updates)
     _validate_update_fields([item.field for item in payload.updates])
 
     try:
@@ -533,27 +583,20 @@ async def apply_portfolio_suggestions(
         item.expectedCurrent = _maybe_parse_json(item.expectedCurrent)
 
     updates = {}
-    push_updates = {}
     for item in payload.updates:
+        field = _map_field_aliases(item.field)
         item.value = _maybe_parse_json(item.value)
-        item.value = _coerce_list_field(item.field, item.value)
-        normalized_value = normalize_update(item.field, item.value)
-        tokens = _path_to_tokens(item.field)
-        if tokens and isinstance(tokens[-1], int):
-            parent_tokens = tokens[:-1]
-            parent_value = _read_value_at_path(current_data, _tokens_to_mongo(parent_tokens))
-            index = tokens[-1]
-            if isinstance(parent_value, list) and index == len(parent_value):
-                _append_push_updates(push_updates, _tokens_to_mongo(parent_tokens), normalized_value)
-                continue
-        updates[_field_path_to_mongo(item.field)] = normalized_value
+        item.value = _coerce_list_field(field, item.value)
+        normalized_value = normalize_update(field, item.value)
+        normalized_value = _normalize_indexed_update(field, normalized_value)
+        updates[_field_path_to_mongo(field)] = normalized_value
 
     updates["last_updated"] = int(time.time())
 
     updated_item = await update_portfolio_fields_by_user_id(
         updates,
         user_id=token.userId,
-        push_updates=push_updates,
+        push_updates=None,
     )
     background_tasks.add_task(trigger_portfolio_revalidate)
 
