@@ -79,16 +79,28 @@ async def update_portfolio_fields(
 ) -> Optional[dict]:
     if not updates and not push_updates:
         return None
-    update_doc = {}
-    if updates:
-        update_doc["$set"] = updates
-    if push_updates:
-        update_doc["$push"] = push_updates
-    result = await db.portfolios.find_one_and_update(
-        filter_dict,
-        update_doc,
-        return_document=ReturnDocument.AFTER,
-    )
+    if updates and push_updates:
+        await db.portfolios.find_one_and_update(
+            filter_dict,
+            {"$set": updates},
+            return_document=ReturnDocument.AFTER,
+        )
+        result = await db.portfolios.find_one_and_update(
+            filter_dict,
+            {"$push": push_updates},
+            return_document=ReturnDocument.AFTER,
+        )
+    else:
+        update_doc = {}
+        if updates:
+            update_doc["$set"] = updates
+        if push_updates:
+            update_doc["$push"] = push_updates
+        result = await db.portfolios.find_one_and_update(
+            filter_dict,
+            update_doc,
+            return_document=ReturnDocument.AFTER,
+        )
     if result is None:
         return None
     return result
