@@ -15,7 +15,7 @@ def get_r2_settings():
 
 
 def build_public_url(endpoint_url: str, bucket: str, key: str) -> str:
-    public_base_url = os.getenv("PUBLIC_BASE_URL")
+    public_base_url = "https://pub-4e784ee4f6b24479b0e9573fac4a96e8.r2.dev/"
     if public_base_url:
         return f"{public_base_url.rstrip('/')}/{key}"
     return f"{endpoint_url.rstrip('/')}/{bucket}/{key}"
