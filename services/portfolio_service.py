@@ -8,7 +8,7 @@
 
 from bson import ObjectId
 from fastapi import HTTPException
-from typing import List
+from typing import Any, Dict, List
 from pydantic import ValidationError
 
 from repositories.portfolio import (
@@ -124,6 +124,60 @@ async def retrieve_portfolio_raw_by_user_id(user_id: str) -> dict:
     if not result:
         raise HTTPException(status_code=404, detail="Portfolio not found")
     return result
+
+
+def build_empty_portfolio_schema(user_id: str | None = None) -> Dict[str, Any]:
+    return {
+        "userId": user_id,
+        "navItems": [],
+        "footer": {"copyright": "", "tagline": ""},
+        "hero": {"name": "", "title": "", "bio": [], "availability": {"label": "", "status": ""}},
+        "experience": [],
+        "projects": [],
+        "skillGroups": [],
+        "contacts": [],
+        "theme": {
+            "text_primary": "",
+            "text_secondary": "",
+            "text_muted": "",
+            "bg_primary": "",
+            "bg_surface": "",
+            "bg_surface_hover": "",
+            "bg_divider": "",
+            "accent_primary": "",
+            "accent_muted": "",
+        },
+        "animations": {"staggerChildren": 0, "delayChildren": 0, "duration": 0, "ease": ""},
+        "metadata": {"title": "", "description": "", "author": ""},
+        "resumeUrl": "",
+    }
+
+
+def build_empty_portfolio_create(user_id: str) -> PortfolioCreate:
+    return PortfolioCreate(
+        user_id=user_id,
+        navItems=[],
+        footer={"copyright": "", "tagline": ""},
+        hero={"name": "", "title": "", "bio": [], "availability": {"label": "", "status": ""}},
+        experience=[],
+        projects=[],
+        skillGroups=[],
+        contacts=[],
+        theme={
+            "text_primary": "",
+            "text_secondary": "",
+            "text_muted": "",
+            "bg_primary": "",
+            "bg_surface": "",
+            "bg_surface_hover": "",
+            "bg_divider": "",
+            "accent_primary": "",
+            "accent_muted": "",
+        },
+        animations={"staggerChildren": 0, "delayChildren": 0, "duration": 0, "ease": ""},
+        metadata={"title": "", "description": "", "author": ""},
+        resumeUrl="",
+    )
 
 
 async def update_portfolio_by_id(portfolio_id: str, portfolio_data: PortfolioUpdate, user_id: str) -> PortfolioOut:

@@ -16,6 +16,7 @@ from schemas.portfolio import (
 from schemas.portfolio_suggestions import (
     AnalyzePortfolioResponse,
     ApplySuggestionsRequest,
+    ApplySuggestionItem,
 )
 from security.auth import verify_token
 from security.account_status_check import check_user_account_status_and_permissions
@@ -28,6 +29,8 @@ from services.portfolio_service import (
     retrieve_portfolio_raw_by_user_id,
     update_portfolio_by_user_id,
     update_portfolio_fields_by_user_id,
+    build_empty_portfolio_schema,
+    build_empty_portfolio_create,
 )
 from services.revalidate_service import trigger_portfolio_revalidate
 from services.document_service import process_portfolio_document
@@ -128,6 +131,100 @@ def _append_push_updates(push_updates: dict, key: str, value):
         push_updates[key] = {"$each": [existing, value]}
 
 
+def _strip_url_prefix(value: str) -> str:
+    trimmed = value.strip()
+    if trimmed.startswith("http://"):
+        return trimmed[7:]
+    if trimmed.startswith("https://"):
+        return trimmed[8:]
+    if trimmed.startswith("www."):
+        return trimmed[4:]
+    return trimmed
+
+
+def _normalize_contact_legacy_value(kind: str, value: str) -> dict:
+    cleaned = value.strip()
+    if kind == "email":
+        return {
+            "label": "Email",
+            "value": cleaned,
+            "href": f"mailto:{cleaned}" if cleaned else "",
+            "icon": "email",
+        }
+    if kind == "phone":
+        return {
+            "label": "Phone",
+            "value": cleaned,
+            "href": f"tel:{cleaned}" if cleaned else "",
+            "icon": "phone",
+        }
+    if kind == "github":
+        display = _strip_url_prefix(cleaned).replace("github.com/", "")
+        handle = display.strip().strip("/")
+        href = f"https://github.com/{handle}" if handle else ""
+        return {
+            "label": "GitHub",
+            "value": f"github.com/{handle}" if handle else cleaned,
+            "href": href,
+            "icon": "github",
+        }
+    if kind == "linkedin":
+        display = _strip_url_prefix(cleaned)
+        if "linkedin.com" in display:
+            href = f"https://{display}".replace("https://https://", "https://")
+            value = display.replace("linkedin.com/in/", "").strip("/")
+        else:
+            handle = display.replace(" ", "-")
+            href = f"https://linkedin.com/in/{handle}" if handle else ""
+            value = handle or cleaned
+        return {
+            "label": "LinkedIn",
+            "value": f"linkedin.com/in/{value}" if value else cleaned,
+            "href": href,
+            "icon": "linkedin",
+        }
+    if kind in {"x", "twitter"}:
+        display = _strip_url_prefix(cleaned).replace("twitter.com/", "").replace("x.com/", "")
+        handle = display.strip().lstrip("@")
+        href = f"https://x.com/{handle}" if handle else ""
+        return {
+            "label": "X",
+            "value": f"x.com/{handle}" if handle else cleaned,
+            "href": href,
+            "icon": "x",
+        }
+    return {"label": "", "value": cleaned, "href": "", "icon": None}
+
+
+def _expand_contact_legacy_updates(updates: list[ApplySuggestionItem]) -> list[ApplySuggestionItem]:
+    legacy_fields = {}
+    existing_fields = {item.field for item in updates}
+    expanded: list[ApplySuggestionItem] = []
+    for item in updates:
+        tokens = _path_to_tokens(item.field)
+        if len(tokens) == 3 and tokens[0] == "contacts" and isinstance(tokens[1], int):
+            key = str(tokens[2]).lower()
+            if key in {"email", "phone", "linkedin", "github", "x", "twitter"}:
+                legacy_fields[(tokens[1], key)] = item
+                continue
+        expanded.append(item)
+
+    for (index, key), item in legacy_fields.items():
+        normalized = _normalize_contact_legacy_value(key, str(item.value or ""))
+        for field_key in ("label", "value", "href", "icon"):
+            field_path = f"contacts[{index}].{field_key}"
+            if field_path in existing_fields:
+                continue
+            expanded.append(
+                ApplySuggestionItem(
+                    field=field_path,
+                    value=normalized.get(field_key),
+                    expectedCurrent=item.expectedCurrent,
+                )
+            )
+    return expanded
+
+
 def _validate_update_fields(paths: list[str]) -> None:
     for path in paths:
         if not path or not isinstance(path, str):
@@ -146,6 +243,31 @@ def _maybe_parse_json(value):
             except Exception:
                 return value
     return value
+
+
+def _is_empty_value(value) -> bool:
+    return value is None or value == "" or value == [] or value == {}
+
+
+def _values_equivalent(current, expected) -> bool:
+    if _is_empty_value(current) and _is_empty_value(expected):
+        return True
+    return current == expected
+
+
+def _can_append_missing_list_leaf(data: dict, tokens: list, expected_current) -> bool:
+    if not tokens or _is_empty_value(expected_current) is False:
+        return False
+    index_positions = [idx for idx, token in enumerate(tokens) if isinstance(token, int)]
+    if not index_positions:
+        return False
+    list_index_position = index_positions[-1]
+    parent_tokens = tokens[:list_index_position]
+    parent_value = _read_value_at_path(data, _tokens_to_mongo(parent_tokens))
+    index = tokens[list_index_position]
+    if parent_value is None:
+        return index == 0
+    return isinstance(parent_value, list) and index == len(parent_value)
 
 
 
@@ -309,11 +431,17 @@ async def analyze_portfolio_document(
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
-    current_portfolio = await retrieve_portfolio_by_user_id(user_id=token.userId)
+    try:
+        current_portfolio = await retrieve_portfolio_by_user_id(user_id=token.userId)
+        current_portfolio_dict = current_portfolio.model_dump()
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+        current_portfolio_dict = build_empty_portfolio_schema(token.userId)
     try:
         suggestions = generate_portfolio_suggestions(
             extracted_text,
-            current_portfolio.model_dump(),
+            current_portfolio_dict,
         )
     except Exception as exc:
         raise HTTPException(
@@ -338,9 +466,16 @@ async def apply_portfolio_suggestions(
     background_tasks: BackgroundTasks,
     token: accessTokenOut = Depends(verify_token),
 ):
+    payload.updates = _expand_contact_legacy_updates(payload.updates)
     _validate_update_fields([item.field for item in payload.updates])
 
-    current_data = await retrieve_portfolio_raw_by_user_id(user_id=token.userId)
+    try:
+        current_data = await retrieve_portfolio_raw_by_user_id(user_id=token.userId)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+        created = await add_portfolio(build_empty_portfolio_create(token.userId), token.userId)
+        current_data = created.model_dump()
 
     conflicts = []
     for item in payload.updates:
@@ -351,13 +486,9 @@ async def apply_portfolio_suggestions(
         tokens = _path_to_tokens(item.field)
         if tokens and isinstance(tokens[-1], int):
             continue
-        if current_value is None and tokens and isinstance(tokens[-1], int):
-            parent_tokens = tokens[:-1]
-            parent_value = _read_value_at_path(current_data, _tokens_to_mongo(parent_tokens))
-            index = tokens[-1]
-            if isinstance(parent_value, list) and index == len(parent_value) and item.expectedCurrent in ("", [], {}):
-                continue
-        if current_value != item.expectedCurrent:
+        if current_value is None and _can_append_missing_list_leaf(current_data, tokens, item.expectedCurrent):
+            continue
+        if not _values_equivalent(current_value, item.expectedCurrent):
             conflicts.append({"field": item.field, "currentValue": current_value})
 
     if conflicts:
