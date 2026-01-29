@@ -501,25 +501,8 @@ async def apply_portfolio_suggestions(
         created = await add_portfolio(build_empty_portfolio_create(token.userId), token.userId)
         current_data = created.model_dump()
 
-    conflicts = []
     for item in payload.updates:
         item.expectedCurrent = _maybe_parse_json(item.expectedCurrent)
-        if item.expectedCurrent is None:
-            continue
-        current_value = _read_value_at_path(current_data, item.field)
-        tokens = _path_to_tokens(item.field)
-        if tokens and isinstance(tokens[-1], int):
-            continue
-        if current_value is None and _can_append_missing_list_leaf(current_data, tokens, item.expectedCurrent):
-            continue
-        if not _values_equivalent(current_value, item.expectedCurrent):
-            conflicts.append({"field": item.field, "currentValue": current_value})
-
-    if conflicts:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Conflicts detected: {conflicts}",
-        )
 
     updates = {}
     push_updates = {}
