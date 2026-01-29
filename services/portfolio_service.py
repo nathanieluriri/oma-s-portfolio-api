@@ -154,9 +154,13 @@ async def update_portfolio_by_user_id(portfolio_data: PortfolioUpdate, user_id: 
     return result
 
 
-async def update_portfolio_fields_by_user_id(updates: dict, user_id: str) -> PortfolioOut:
+async def update_portfolio_fields_by_user_id(
+    updates: dict,
+    user_id: str,
+    push_updates: dict | None = None,
+) -> PortfolioOut:
     filter_dict = {"user_id": user_id}
-    result = await update_portfolio_fields(filter_dict, updates)
+    result = await update_portfolio_fields(filter_dict, updates, push_updates)
     if not result:
         raise HTTPException(status_code=404, detail="Portfolio not found or update failed")
     try:

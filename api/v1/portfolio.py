@@ -110,6 +110,24 @@ def _read_value_at_path(data: dict, path: str):
     return current
 
 
+def _tokens_to_mongo(tokens: list) -> str:
+    parts = []
+    for token in tokens:
+        parts.append(str(token) if isinstance(token, int) else token)
+    return ".".join(parts)
+
+
+def _append_push_updates(push_updates: dict, key: str, value):
+    existing = push_updates.get(key)
+    if not existing:
+        push_updates[key] = value
+        return
+    if isinstance(existing, dict) and "$each" in existing:
+        existing["$each"].append(value)
+    else:
+        push_updates[key] = {"$each": [existing, value]}
+
+
 def _validate_update_fields(paths: list[str]) -> None:
     for path in paths:
         if not path or not isinstance(path, str):
@@ -330,6 +348,13 @@ async def apply_portfolio_suggestions(
         if item.expectedCurrent is None:
             continue
         current_value = _read_value_at_path(current_data, item.field)
+        tokens = _path_to_tokens(item.field)
+        if current_value is None and tokens and isinstance(tokens[-1], int):
+            parent_tokens = tokens[:-1]
+            parent_value = _read_value_at_path(current_data, _tokens_to_mongo(parent_tokens))
+            index = tokens[-1]
+            if isinstance(parent_value, list) and index == len(parent_value) and item.expectedCurrent in ("", [], {}):
+                continue
         if current_value != item.expectedCurrent:
             conflicts.append({"field": item.field, "currentValue": current_value})
 
@@ -340,13 +365,27 @@ async def apply_portfolio_suggestions(
         )
 
     updates = {}
+    push_updates = {}
     for item in payload.updates:
         item.value = _maybe_parse_json(item.value)
-        updates[_field_path_to_mongo(item.field)] = normalize_update(item.field, item.value)
+        normalized_value = normalize_update(item.field, item.value)
+        tokens = _path_to_tokens(item.field)
+        if tokens and isinstance(tokens[-1], int):
+            parent_tokens = tokens[:-1]
+            parent_value = _read_value_at_path(current_data, _tokens_to_mongo(parent_tokens))
+            index = tokens[-1]
+            if isinstance(parent_value, list) and index == len(parent_value):
+                _append_push_updates(push_updates, _tokens_to_mongo(parent_tokens), normalized_value)
+                continue
+        updates[_field_path_to_mongo(item.field)] = normalized_value
 
     updates["last_updated"] = int(time.time())
 
-    updated_item = await update_portfolio_fields_by_user_id(updates, user_id=token.userId)
+    updated_item = await update_portfolio_fields_by_user_id(
+        updates,
+        user_id=token.userId,
+        push_updates=push_updates,
+    )
     background_tasks.add_task(trigger_portfolio_revalidate)
 
     return APIResponse(

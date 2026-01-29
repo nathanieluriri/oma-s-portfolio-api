@@ -72,12 +72,21 @@ async def delete_portfolio(filter_dict: dict):
     return await db.portfolios.delete_one(filter_dict)
 
 
-async def update_portfolio_fields(filter_dict: dict, updates: dict) -> Optional[dict]:
-    if not updates:
+async def update_portfolio_fields(
+    filter_dict: dict,
+    updates: dict,
+    push_updates: Optional[dict] = None,
+) -> Optional[dict]:
+    if not updates and not push_updates:
         return None
+    update_doc = {}
+    if updates:
+        update_doc["$set"] = updates
+    if push_updates:
+        update_doc["$push"] = push_updates
     result = await db.portfolios.find_one_and_update(
         filter_dict,
-        {"$set": updates},
+        update_doc,
         return_document=ReturnDocument.AFTER,
     )
     if result is None:
