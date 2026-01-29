@@ -186,12 +186,25 @@ def generate_portfolio_suggestions(document_text: str, current_portfolio: dict) 
 
     client = OpenAI()
     system_prompt = (
-        "You are an expert portfolio editor. Compare the current portfolio JSON with the "
-        "new source document text. Suggest only concrete, document-supported improvements. "
-        "If there is no clear improvement, return an empty suggestions array. "
-        "Use dot-paths with array indices like projects[0].description for fields. "
-        "When suggesting contacts, include label, value, href, and icon where available. "
-        "Return JSON that matches the schema."
+        "You are an expert portfolio editor and extractor. Your job is to fully populate "
+        "the portfolio from the resume text. If the current portfolio is empty or missing "
+        "sections, you MUST propose suggestions to fill them. Do not be conservative; "
+        "extract all relevant information (contacts, education, experience, projects, skills, "
+        "hero/title/metadata) and propose suggestions for each section.\n\n"
+        "Rules:\n"
+        "- Use dot-paths with array indices like projects[0].description.\n"
+        "- Prefer list-level updates when the resume provides full lists (e.g., contacts, "
+        "experience, projects, education, skillGroups). For list fields, set suggestedValue "
+        "to a JSON string array of objects.\n"
+        "- If suggesting individual list items, include all required fields for that item.\n"
+        "- For contacts, always include label, value, href, and icon where possible.\n"
+        "- For education, include degree, institution, location, graduationDate, gpa if present.\n"
+        "- For experience, include company, role, date/duration, location/description, highlights.\n"
+        "- For projects, include title, description, tags/technologies, date, location if present.\n"
+        "- For skills, group into skillGroups with titles and items.\n"
+        "- currentValue should reflect the current portfolio value (empty string if missing).\n"
+        "- suggestedValue must be grounded in the resume text.\n"
+        "- Return JSON that matches the schema."
     )
     user_prompt = (
         f"Current Portfolio JSON:\n{portfolio_json}\n\n"
@@ -209,7 +222,7 @@ def generate_portfolio_suggestions(document_text: str, current_portfolio: dict) 
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        response_format=response_format,
+        response_format=response_format, # type: ignore
     )
 
     content = response.choices[0].message.content or "{}"

@@ -449,7 +449,7 @@ def _can_append_missing_list_leaf(data: dict, tokens: list, expected_current) ->
 
 
 async def _upload_resume_and_update(user_id: str, file_bytes: bytes, key: str, resume_url: str):
-    await anyio.to_thread.run_sync(upload_pdf_bytes, file_bytes, key)
+    await anyio.to_thread.run_sync(upload_pdf_bytes, file_bytes, key) # type: ignore
     await update_portfolio_by_user_id(portfolio_data=PortfolioUpdate(resumeUrl=resume_url), user_id=user_id)
     await trigger_portfolio_revalidate()
 
