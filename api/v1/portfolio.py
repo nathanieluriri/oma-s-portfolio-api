@@ -280,6 +280,14 @@ def _coerce_list_field(field: str, value):
         try:
             parsed = json.loads(trimmed)
         except Exception:
+            start = trimmed.find("[")
+            end = trimmed.rfind("]")
+            if start != -1 and end != -1 and end > start:
+                candidate = trimmed[start : end + 1]
+                try:
+                    return json.loads(candidate)
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid JSON list for field '{field}'",
