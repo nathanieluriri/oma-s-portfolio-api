@@ -25,6 +25,15 @@ Make `/portfolios/apply` always replace data (no conflicts), avoid MongoDB updat
    - In `normalize_portfolio_doc`, coerce list fields when they are strings.
    - On failure, fallback to empty list to prevent 500s on read.
 
+5. **Handle indexed list updates that arrive as list-wrapped dicts**
+   - For fields like `projects[0]` or `skillGroups[0]`, unwrap single-item lists into dicts before normalization.
+
+6. **Coerce boolean strings for `.current` fields**
+   - Convert `"true"`/`"false"` strings to booleans during apply.
+
+7. **Harden normalization against nested lists**
+   - Skip non-dict items and unwrap single-item list entries before calling `normalize_*_entry`.
+
 ## Expected Request Body (reference)
 ```
 {"updates":[
@@ -57,3 +66,33 @@ Make `/portfolios/apply` always replace data (no conflicts), avoid MongoDB updat
 ## Notes
 - With parent index updates present (e.g., `contacts[0]`), child updates for that index are dropped to avoid conflicts.
 - This flow ensures the API always applies updates without conflict checks or push logic.
+
+## Implementation — started
+
+I began implementing the fix plan. The approach below documents concrete code changes to make and the first task which is in-progress.
+
+1) Harden normalization (IN-PROGRESS)
+   - File: `services/portfolio_normalization.py`
+   - Goals: safely coerce `contacts`, `experience`, `projects`, `skillGroups` when stored as strings or corrupted lists.
+   - Actions:
+     - For each list field, ensure each item is a dict before calling `.get()`.
+     - If an item is a JSON string, attempt `json.loads` and accept dict result.
+     - If item is a list, attempt to coerce into an object (heuristic) or skip and replace with empty normalized entry.
+     - Always return safe defaults (empty lists / normalized entries) instead of raising.
+
+2) Sanitize `/apply` input (next)
+   - File: `api/v1/portfolio.py`
+   - Goals: parse JSON strings early, coerce list fields, drop child updates when parent index is present, and remove `$push` usage so the endpoint issues only `$set` updates.
+
+3) Remove push usage in apply flow (next)
+   - File: `repositories/portfolio.py` (call sites in `api/v1/portfolio.py`)
+   - Goals: ensure `push_updates` is not populated from `/apply`; endpoint will pass `push_updates=None`.
+
+4) Migration script (after code changes)
+   - File to add: `scripts/fix_portfolios.py`
+   - Purpose: run normalized updates across existing documents to repair corrupted data.
+
+5) Tests & deploy (final)
+   - Add tests for malformed list inputs and run locally before deploying.
+
+Next step: I'll patch `services/portfolio_normalization.py` to add the defensive guards described above and prepare a small unit-style check. If you want me to proceed, I'll apply that patch now.

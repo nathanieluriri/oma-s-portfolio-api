@@ -45,6 +45,8 @@ def normalize_experience_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_project_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(entry, list) and len(entry) == 1 and isinstance(entry[0], dict):
+        entry = entry[0]
     title = entry.get("title") or ""
     link = entry.get("link") or entry.get("url")
     if not link and title:
@@ -68,6 +70,8 @@ def normalize_project_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_skill_group(entry: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(entry, list) and len(entry) == 1 and isinstance(entry[0], dict):
+        entry = entry[0]
     return {
         "title": entry.get("title") or entry.get("category") or "",
         "items": entry.get("items") or entry.get("skills") or [],
@@ -110,25 +114,25 @@ def normalize_portfolio_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
 
     contacts_value = _coerce_list(doc.get("contacts"))
     if isinstance(doc.get("contacts"), list):
-        updates["contacts"] = [normalize_contact_entry(item) for item in doc["contacts"]]
+        updates["contacts"] = [normalize_contact_entry(item) for item in doc["contacts"] if isinstance(item, dict)]
     elif contacts_value is not None:
-        updates["contacts"] = [normalize_contact_entry(item) for item in contacts_value]
+        updates["contacts"] = [normalize_contact_entry(item) for item in contacts_value if isinstance(item, dict)]
 
     experience_value = _coerce_list(doc.get("experience"))
     if isinstance(doc.get("experience"), list):
-        updates["experience"] = [normalize_experience_entry(item) for item in doc["experience"]]
+        updates["experience"] = [normalize_experience_entry(item) for item in doc["experience"] if isinstance(item, dict)]
     elif experience_value is not None:
-        updates["experience"] = [normalize_experience_entry(item) for item in experience_value]
+        updates["experience"] = [normalize_experience_entry(item) for item in experience_value if isinstance(item, dict)]
 
     projects_value = _coerce_list(doc.get("projects"))
     if isinstance(doc.get("projects"), list):
-        updates["projects"] = [normalize_project_entry(item) for item in doc["projects"]]
+        updates["projects"] = [normalize_project_entry(item) for item in doc["projects"] if isinstance(item, (dict, list))]
     elif projects_value is not None:
-        updates["projects"] = [normalize_project_entry(item) for item in projects_value]
+        updates["projects"] = [normalize_project_entry(item) for item in projects_value if isinstance(item, (dict, list))]
 
     skill_groups_value = _coerce_list(doc.get("skillGroups"))
     if isinstance(doc.get("skillGroups"), list):
-        updates["skillGroups"] = [normalize_skill_group(item) for item in doc["skillGroups"]]
+        updates["skillGroups"] = [normalize_skill_group(item) for item in doc["skillGroups"] if isinstance(item, (dict, list))]
     elif skill_groups_value is not None:
-        updates["skillGroups"] = [normalize_skill_group(item) for item in skill_groups_value]
+        updates["skillGroups"] = [normalize_skill_group(item) for item in skill_groups_value if isinstance(item, (dict, list))]
     return updates

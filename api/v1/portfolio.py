@@ -334,6 +334,8 @@ def _normalize_indexed_update(field: str, value):
     tokens = _path_to_tokens(field)
     if len(tokens) != 2 or not isinstance(tokens[1], int):
         return value
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], dict):
+        value = value[0]
     if tokens[0] == "contacts" and isinstance(value, dict):
         return normalize_contact_entry(value)
     if tokens[0] == "experience" and isinstance(value, dict):
@@ -586,6 +588,10 @@ async def apply_portfolio_suggestions(
     for item in payload.updates:
         field = _map_field_aliases(item.field)
         item.value = _maybe_parse_json(item.value)
+        if isinstance(item.value, str) and field.endswith(".current"):
+            lowered = item.value.strip().lower()
+            if lowered in ("true", "false"):
+                item.value = lowered == "true"
         item.value = _coerce_list_field(field, item.value)
         normalized_value = normalize_update(field, item.value)
         normalized_value = _normalize_indexed_update(field, normalized_value)
