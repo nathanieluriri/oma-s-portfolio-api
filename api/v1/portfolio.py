@@ -318,6 +318,36 @@ def _coalesce_indexed_children(updates: list[ApplySuggestionItem]) -> list[Apply
     return kept
 
 
+def _apply_indexed_list_set(
+    updates: dict,
+    current_data: dict,
+    field: str,
+    value,
+) -> bool:
+    tokens = _path_to_tokens(field)
+    if len(tokens) != 2 or not isinstance(tokens[1], int):
+        return False
+    root = tokens[0]
+    index = tokens[1]
+    if root not in _LIST_FIELDS:
+        return False
+    parent_value = _read_value_at_path(current_data, root)
+    if isinstance(updates.get(root), list):
+        items = updates[root]
+        while len(items) <= index:
+            items.append({})
+        items[index] = value
+        return True
+    if not isinstance(parent_value, list):
+        items = []
+        while len(items) <= index:
+            items.append({})
+        items[index] = value
+        updates[root] = items
+        return True
+    return False
+
+
 def _validate_update_fields(paths: list[str]) -> None:
     for path in paths:
         if not path or not isinstance(path, str):
@@ -642,6 +672,8 @@ async def apply_portfolio_suggestions(
         item.value = _coerce_list_field(field, item.value)
         normalized_value = normalize_update(field, item.value)
         normalized_value = _normalize_indexed_update(field, normalized_value)
+        if _apply_indexed_list_set(updates, current_data, field, normalized_value):
+            continue
         updates[_field_path_to_mongo(field)] = normalized_value
 
     updates["last_updated"] = int(time.time())

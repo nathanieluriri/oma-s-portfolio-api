@@ -37,6 +37,12 @@ Make `/portfolios/apply` always replace data (no conflicts), avoid MongoDB updat
 8. **Coalesce child updates into parent index objects**
    - When updates include `list[index].field` without a `list[index]` object, build a single dict and set `list[index]` instead.
 
+9. **Create list roots when missing**
+   - If `education[0]` (or any list index) is set while the root list is missing or not a list, initialize the list and set the index.
+
+10. **Normalize string item lists**
+   - Convert comma-delimited strings to arrays for fields like `skillGroups[].items` during normalization.
+
 ## Expected Request Body (reference)
 ```
 {"updates":[

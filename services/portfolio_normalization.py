@@ -72,9 +72,12 @@ def normalize_project_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
 def normalize_skill_group(entry: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(entry, list) and len(entry) == 1 and isinstance(entry[0], dict):
         entry = entry[0]
+    items = entry.get("items") or entry.get("skills") or []
+    if isinstance(items, str):
+        items = [value.strip() for value in items.split(",") if value.strip()]
     return {
         "title": entry.get("title") or entry.get("category") or "",
-        "items": entry.get("items") or entry.get("skills") or [],
+        "items": items,
     }
 
 
@@ -87,6 +90,8 @@ def normalize_update(field: str, value: Any) -> Any:
         return [normalize_project_entry(item) for item in value]
     if field == "skillGroups" and isinstance(value, list):
         return [normalize_skill_group(item) for item in value]
+    if field == "education" and isinstance(value, list):
+        return value
     return value
 
 
@@ -95,6 +100,11 @@ def normalize_portfolio_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     def _coerce_list(value):
         if isinstance(value, list):
             return value
+        if isinstance(value, dict) and value and all(str(key).isdigit() for key in value.keys()):
+            items = []
+            for key in sorted(value.keys(), key=lambda k: int(k)):
+                items.append(value[key])
+            return items
         if isinstance(value, str):
             trimmed = value.strip()
             if not trimmed:
@@ -135,4 +145,9 @@ def normalize_portfolio_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
         updates["skillGroups"] = [normalize_skill_group(item) for item in doc["skillGroups"] if isinstance(item, (dict, list))]
     elif skill_groups_value is not None:
         updates["skillGroups"] = [normalize_skill_group(item) for item in skill_groups_value if isinstance(item, (dict, list))]
+    education_value = _coerce_list(doc.get("education"))
+    if isinstance(doc.get("education"), list):
+        updates["education"] = [item for item in doc["education"] if isinstance(item, dict)]
+    elif education_value is not None:
+        updates["education"] = [item for item in education_value if isinstance(item, dict)]
     return updates
