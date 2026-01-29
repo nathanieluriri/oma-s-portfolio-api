@@ -80,6 +80,13 @@ class ContactEntry(BaseModel):
     href: str
     icon: Optional[str] = None
 
+class EducationEntry(BaseModel):
+    degree: str = ""
+    institution: str = ""
+    location: str = ""
+    graduationDate: str = ""
+    gpa: str = ""
+
 class ThemeColors(BaseModel):
     text_primary: str = "#1B1B1B"
     text_secondary: str = "#4B4B4B"
@@ -159,6 +166,7 @@ class PortfolioBase(BaseModel):
             },
         ]
     ) # type: ignore
+    education: List[EducationEntry] = Field(default_factory=list)
     contacts: List[ContactEntry] = Field(
         default_factory=lambda: [
             {"label": "Email", "value": "hello@oma.com", "href": "mailto:hello@oma.com", "icon": None},
@@ -185,6 +193,7 @@ class PortfolioUpdate(BaseModel):
     experience: Optional[List[ExperienceEntry]] = None
     projects: Optional[List[ProjectEntry]] = None
     skillGroups: Optional[List[SkillGroup]] = None
+    education: Optional[List[EducationEntry]] = None
     contacts: Optional[List[ContactEntry]] = None
     theme: Optional[ThemeColors] = None
     animations: Optional[AnimationSettings] = None

@@ -34,6 +34,9 @@ Make `/portfolios/apply` always replace data (no conflicts), avoid MongoDB updat
 7. **Harden normalization against nested lists**
    - Skip non-dict items and unwrap single-item list entries before calling `normalize_*_entry`.
 
+8. **Coalesce child updates into parent index objects**
+   - When updates include `list[index].field` without a `list[index]` object, build a single dict and set `list[index]` instead.
+
 ## Expected Request Body (reference)
 ```
 {"updates":[

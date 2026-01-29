@@ -53,6 +53,7 @@ ALLOWED_PORTFOLIO_PREFIXES = {
     "experience",
     "projects",
     "skillGroups",
+    "education",
     "contacts",
     "theme",
     "animations",
@@ -60,7 +61,7 @@ ALLOWED_PORTFOLIO_PREFIXES = {
     "resumeUrl",
 }
 
-_LIST_FIELDS = {"contacts", "experience", "projects", "skillGroups"}
+_LIST_FIELDS = {"contacts", "experience", "projects", "skillGroups", "education"}
 
 
 def _path_to_tokens(path: str) -> list:
@@ -272,6 +273,49 @@ def _prune_parent_index_updates(updates: list[ApplySuggestionItem]) -> list[Appl
                 continue
         pruned.append(item)
     return pruned
+
+
+def _set_nested_dict_value(target: dict, keys: list[str], value) -> None:
+    current = target
+    for idx, key in enumerate(keys):
+        if idx == len(keys) - 1:
+            current[key] = value
+            return
+        if key not in current or not isinstance(current[key], dict):
+            current[key] = {}
+        current = current[key]
+
+
+def _coalesce_indexed_children(updates: list[ApplySuggestionItem]) -> list[ApplySuggestionItem]:
+    parent_fields: set[str] = set()
+    for item in updates:
+        tokens = _path_to_tokens(item.field)
+        if len(tokens) == 2 and isinstance(tokens[1], int) and tokens[0] in _LIST_FIELDS:
+            parent_fields.add(item.field)
+
+    grouped: dict[tuple[str, int], dict] = {}
+    kept: list[ApplySuggestionItem] = []
+    for item in updates:
+        tokens = _path_to_tokens(item.field)
+        if len(tokens) > 2 and isinstance(tokens[1], int) and tokens[0] in _LIST_FIELDS:
+            parent_field = f"{tokens[0]}[{tokens[1]}]"
+            if parent_field in parent_fields:
+                continue
+            key_list = [str(token) for token in tokens[2:]]
+            group = grouped.setdefault((tokens[0], tokens[1]), {})
+            _set_nested_dict_value(group, key_list, item.value)
+            continue
+        kept.append(item)
+
+    for (root, index), value in grouped.items():
+        kept.append(
+            ApplySuggestionItem(
+                field=f"{root}[{index}]",
+                value=value,
+                expectedCurrent="",
+            )
+        )
+    return kept
 
 
 def _validate_update_fields(paths: list[str]) -> None:
@@ -570,6 +614,10 @@ async def apply_portfolio_suggestions(
 ):
     payload.updates = _expand_contact_legacy_updates(payload.updates)
     payload.updates = _prune_root_updates_with_children(payload.updates)
+    for item in payload.updates:
+        item.value = _maybe_parse_json(item.value)
+        item.field = _map_field_aliases(item.field)
+    payload.updates = _coalesce_indexed_children(payload.updates)
     payload.updates = _prune_parent_index_updates(payload.updates)
     _validate_update_fields([item.field for item in payload.updates])
 
@@ -586,8 +634,7 @@ async def apply_portfolio_suggestions(
 
     updates = {}
     for item in payload.updates:
-        field = _map_field_aliases(item.field)
-        item.value = _maybe_parse_json(item.value)
+        field = item.field
         if isinstance(item.value, str) and field.endswith(".current"):
             lowered = item.value.strip().lower()
             if lowered in ("true", "false"):
