@@ -349,6 +349,8 @@ async def apply_portfolio_suggestions(
             continue
         current_value = _read_value_at_path(current_data, item.field)
         tokens = _path_to_tokens(item.field)
+        if tokens and isinstance(tokens[-1], int):
+            continue
         if current_value is None and tokens and isinstance(tokens[-1], int):
             parent_tokens = tokens[:-1]
             parent_value = _read_value_at_path(current_data, _tokens_to_mongo(parent_tokens))
