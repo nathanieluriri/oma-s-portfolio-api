@@ -538,7 +538,9 @@ async def health_check():
 # --- auto-routes-start ---
 from api.v1.portfolio import router as v1_portfolio_router
 from api.v1.user_route import router as v1_user_route_router
+from api.v1.suggestions import router as v1_suggestions_router
 
 app.include_router(v1_portfolio_router, prefix='/v1')
 app.include_router(v1_user_route_router, prefix='/v1')
+app.include_router(v1_suggestions_router, prefix='/v1')
 # --- auto-routes-end ---
