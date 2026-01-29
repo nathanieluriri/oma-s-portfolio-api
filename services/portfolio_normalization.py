@@ -1,4 +1,5 @@
 from typing import Any, Dict, List
+import json
 
 
 def _slugify(value: str) -> str:
@@ -87,12 +88,47 @@ def normalize_update(field: str, value: Any) -> Any:
 
 def normalize_portfolio_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     updates: Dict[str, Any] = {}
+    def _coerce_list(value):
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            trimmed = value.strip()
+            if not trimmed:
+                return []
+            try:
+                return json.loads(trimmed)
+            except Exception:
+                start = trimmed.find("[")
+                end = trimmed.rfind("]")
+                if start != -1 and end != -1 and end > start:
+                    try:
+                        return json.loads(trimmed[start : end + 1])
+                    except Exception:
+                        return []
+                return []
+        return None
+
+    contacts_value = _coerce_list(doc.get("contacts"))
     if isinstance(doc.get("contacts"), list):
         updates["contacts"] = [normalize_contact_entry(item) for item in doc["contacts"]]
+    elif contacts_value is not None:
+        updates["contacts"] = [normalize_contact_entry(item) for item in contacts_value]
+
+    experience_value = _coerce_list(doc.get("experience"))
     if isinstance(doc.get("experience"), list):
         updates["experience"] = [normalize_experience_entry(item) for item in doc["experience"]]
+    elif experience_value is not None:
+        updates["experience"] = [normalize_experience_entry(item) for item in experience_value]
+
+    projects_value = _coerce_list(doc.get("projects"))
     if isinstance(doc.get("projects"), list):
         updates["projects"] = [normalize_project_entry(item) for item in doc["projects"]]
+    elif projects_value is not None:
+        updates["projects"] = [normalize_project_entry(item) for item in projects_value]
+
+    skill_groups_value = _coerce_list(doc.get("skillGroups"))
     if isinstance(doc.get("skillGroups"), list):
         updates["skillGroups"] = [normalize_skill_group(item) for item in doc["skillGroups"]]
+    elif skill_groups_value is not None:
+        updates["skillGroups"] = [normalize_skill_group(item) for item in skill_groups_value]
     return updates
