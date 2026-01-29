@@ -90,7 +90,7 @@ def env_bool(name: str, default: bool = False) -> bool:
 # Create the FastAPI app
 app = FastAPI(
     
-    lifespan= lifespan,
+    lifespan= lifespan, # type: ignore
     title="REST API",
     
 )
@@ -104,7 +104,7 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=session_secret,
     session_cookie=session_cookie_name,
-    same_site=session_cookie_samesite,
+    same_site=session_cookie_samesite, # type: ignore
     https_only=session_cookie_secure,
     domain=session_cookie_domain,
 )
