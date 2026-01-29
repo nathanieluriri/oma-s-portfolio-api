@@ -54,6 +54,8 @@ ALLOWED_PORTFOLIO_PREFIXES = {
     "resumeUrl",
 }
 
+_LIST_FIELDS = {"contacts", "experience", "projects", "skillGroups"}
+
 
 def _path_to_tokens(path: str) -> list:
     tokens = []
@@ -265,6 +267,24 @@ def _maybe_parse_json(value):
                 return json.loads(trimmed)
             except Exception:
                 return value
+    return value
+
+
+def _coerce_list_field(field: str, value):
+    if field not in _LIST_FIELDS:
+        return value
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return []
+        try:
+            parsed = json.loads(trimmed)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid JSON list for field '{field}'",
+            )
+        return parsed
     return value
 
 
@@ -508,6 +528,7 @@ async def apply_portfolio_suggestions(
     push_updates = {}
     for item in payload.updates:
         item.value = _maybe_parse_json(item.value)
+        item.value = _coerce_list_field(item.field, item.value)
         normalized_value = normalize_update(item.field, item.value)
         tokens = _path_to_tokens(item.field)
         if tokens and isinstance(tokens[-1], int):
