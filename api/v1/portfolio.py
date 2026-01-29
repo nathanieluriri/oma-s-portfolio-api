@@ -225,6 +225,29 @@ def _expand_contact_legacy_updates(updates: list[ApplySuggestionItem]) -> list[A
     return expanded
 
 
+def _prune_root_updates_with_children(updates: list[ApplySuggestionItem]) -> list[ApplySuggestionItem]:
+    roots_with_children: set[str] = set()
+    root_updates: set[str] = set()
+    for item in updates:
+        tokens = _path_to_tokens(item.field)
+        if not tokens:
+            continue
+        root = str(tokens[0])
+        if len(tokens) == 1:
+            root_updates.add(root)
+        else:
+            roots_with_children.add(root)
+    if not roots_with_children:
+        return updates
+    pruned: list[ApplySuggestionItem] = []
+    for item in updates:
+        tokens = _path_to_tokens(item.field)
+        if tokens and len(tokens) == 1 and tokens[0] in roots_with_children:
+            continue
+        pruned.append(item)
+    return pruned
+
+
 def _validate_update_fields(paths: list[str]) -> None:
     for path in paths:
         if not path or not isinstance(path, str):
@@ -467,6 +490,7 @@ async def apply_portfolio_suggestions(
     token: accessTokenOut = Depends(verify_token),
 ):
     payload.updates = _expand_contact_legacy_updates(payload.updates)
+    payload.updates = _prune_root_updates_with_children(payload.updates)
     _validate_update_fields([item.field for item in payload.updates])
 
     try:
