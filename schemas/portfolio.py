@@ -108,6 +108,10 @@ class Metadata(BaseModel):
     title: str = "Chioma Ejike"
     description: str = "Portfolio for Chioma Ejike."
     author: str = "Chioma Ejike"
+    socialImageUrl:str="https://pub-4e784ee4f6b24479b0e9573fac4a96e8.r2.dev/anagram_light.png"
+    anagramDarkModeUrl:str="https://pub-4e784ee4f6b24479b0e9573fac4a96e8.r2.dev/anagram.png"
+    anagramLightModeUrl:str="https://pub-4e784ee4f6b24479b0e9573fac4a96e8.r2.dev/anagram_light.png"
+    faviconImageUrl:str="https://pub-4e784ee4f6b24479b0e9573fac4a96e8.r2.dev/favicon.svg"
 
 class PortfolioBase(BaseModel):
     # Add other fields here 
