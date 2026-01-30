@@ -112,6 +112,7 @@ class Metadata(BaseModel):
     anagramDarkModeUrl:str="https://pub-4e784ee4f6b24479b0e9573fac4a96e8.r2.dev/anagram.png"
     anagramLightModeUrl:str="https://pub-4e784ee4f6b24479b0e9573fac4a96e8.r2.dev/anagram_light.png"
     faviconImageUrl:str="https://pub-4e784ee4f6b24479b0e9573fac4a96e8.r2.dev/favicon.svg"
+    showAnagram:bool=False
 
 class PortfolioBase(BaseModel):
     # Add other fields here 
