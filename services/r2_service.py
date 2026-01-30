@@ -37,3 +37,21 @@ def upload_pdf_bytes(file_bytes: bytes, key: str) -> str:
         ContentType="application/pdf",
     )
     return build_public_url(endpoint_url, bucket, key)
+
+
+def upload_bytes(file_bytes: bytes, key: str, content_type: str) -> str:
+    endpoint_url, access_key, secret_key, bucket = get_r2_settings()
+    client = boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name="auto",
+    )
+    client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=file_bytes,
+        ContentType=content_type,
+    )
+    return build_public_url(endpoint_url, bucket, key)

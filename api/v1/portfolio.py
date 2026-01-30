@@ -6,6 +6,8 @@ import ast
 import time
 import uuid
 import anyio
+import mimetypes
+import os
 from schemas.response_schema import APIResponse
 from schemas.tokens_schema import accessTokenOut
 from schemas.portfolio import (
@@ -21,7 +23,7 @@ from schemas.portfolio_suggestions import (
 )
 from security.auth import verify_token
 from security.account_status_check import check_user_account_status_and_permissions
-from services.r2_service import get_r2_settings, build_public_url, upload_pdf_bytes
+from services.r2_service import get_r2_settings, build_public_url, upload_pdf_bytes, upload_bytes
 from services.portfolio_service import (
     add_portfolio,
     remove_portfolio_by_user_id,
@@ -151,6 +153,26 @@ def _strip_url_prefix(value: str) -> str:
     if trimmed.startswith("www."):
         return trimmed[4:]
     return trimmed
+
+
+def _resolve_image_extension(upload: UploadFile) -> str:
+    ext = ""
+    if upload.filename:
+        _, ext = os.path.splitext(upload.filename)
+    if not ext:
+        guessed = mimetypes.guess_extension(upload.content_type or "")
+        ext = guessed or ""
+    if not ext:
+        ext = ".img"
+    return ext.lower()
+
+
+def _ensure_image_upload(upload: UploadFile, field_label: str) -> None:
+    if not upload.content_type or not upload.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field_label} must be an image file",
+        )
 
 
 def _normalize_contact_legacy_value(kind: str, value: str) -> dict:
@@ -633,6 +655,88 @@ async def upload_resume(
         status_code=202,
         data={"resumeUrl": resume_url},
         detail="Resume upload queued",
+    )
+
+
+@router.post(
+    "/upload_metadata_images",
+    response_model=APIResponse[dict],
+    dependencies=[Depends(verify_token), Depends(check_user_account_status_and_permissions)],
+)
+async def upload_metadata_images(
+    background_tasks: BackgroundTasks,
+    social_image: Optional[UploadFile] = File(None),
+    anagram_dark: Optional[UploadFile] = File(None),
+    anagram_light: Optional[UploadFile] = File(None),
+    favicon: Optional[UploadFile] = File(None),
+    token: accessTokenOut = Depends(verify_token),
+):
+    """
+    Upload images to update portfolio metadata URLs (social image, anagrams, favicon).
+    """
+    uploads = {
+        "socialImageUrl": social_image,
+        "anagramDarkModeUrl": anagram_dark,
+        "anagramLightModeUrl": anagram_light,
+        "faviconImageUrl": favicon,
+    }
+    if not any(uploads.values()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one image file is required",
+        )
+
+    # Ensure the portfolio exists before uploading assets
+    await retrieve_portfolio_by_user_id(user_id=token.userId)
+
+    try:
+        get_r2_settings()
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Cloudflare R2 environment variables not configured",
+        )
+
+    url_updates = {}
+    for field, upload in uploads.items():
+        if not upload:
+            continue
+        _ensure_image_upload(upload, field)
+        file_bytes = await upload.read()
+        if not file_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{field} upload is empty",
+            )
+        extension = _resolve_image_extension(upload)
+        key = f"branding/{token.userId}/{field.lower()}_{uuid.uuid4().hex}{extension}"
+        try:
+            public_url = await anyio.to_thread.run_sync(
+                upload_bytes,
+                file_bytes,
+                key,
+                upload.content_type,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to upload {field}: {exc}",
+            )
+        url_updates[field] = public_url
+
+    updates = {f"metadata.{field}": url for field, url in url_updates.items()}
+    updates["last_updated"] = int(time.time())
+    updated_item = await update_portfolio_fields_by_user_id(
+        updates,
+        user_id=token.userId,
+        push_updates=None,
+    )
+    background_tasks.add_task(trigger_portfolio_revalidate)
+
+    return APIResponse(
+        status_code=200,
+        data=url_updates,
+        detail="Metadata images updated",
     )
 
 

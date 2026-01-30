@@ -36,8 +36,8 @@ load_dotenv()
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-SUCCESS_PAGE_URL = os.getenv("SUCCESS_PAGE_URL", "https://omas-portfolio-frontend.vercel.app/admin/success")
-ERROR_PAGE_URL   = os.getenv("ERROR_PAGE_URL",   "https://omas-portfolio-frontend.vercel.app/admin/error")
+SUCCESS_PAGE_URL = os.getenv("SUCCESS_PAGE_URL", "https://portfolio.uriri.com.ng/admin/success")
+ERROR_PAGE_URL   = os.getenv("ERROR_PAGE_URL",   "https://portfolio.uriri.com.ng/admin/error")
 ALLOWED_GOOGLE_EMAILS = {
     email.strip().lower()
     for email in os.getenv("ALLOWED_GOOGLE_EMAILS", "").split(",")
