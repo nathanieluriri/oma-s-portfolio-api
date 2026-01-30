@@ -89,6 +89,14 @@ curl -X POST https://api.yourdomain.com/v1/suggestions/generate \
   -F "use_existing_resume=true"
 ```
 
+## AI Response Formatting (server-side)
+The backend already handles response formatting for the AI provider:
+
+- **Primary mode**: `response_format={"type": "json_schema", "json_schema": {"name": "portfolio_patch", "schema": <pydantic-json-schema>, "strict": true}}`
+- **Fallback** (for non-supporting models): `response_format={"type": "json_object"}`
+
+Clients do **not** need to set these; they’re documented here for completeness and debugging.
+
 ## Notes & Limits
 - Text is truncated to ~15,000 characters before sending to AI.
 - Output is validated against the portfolio schema; only fields present in the text are returned.

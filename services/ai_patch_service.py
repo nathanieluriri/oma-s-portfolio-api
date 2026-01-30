@@ -40,7 +40,14 @@ class AIPatchService:
 
         response_format: dict[str, Any] = {"type": "json_object"}
         if _supports_json_schema(self.model):
-            response_format = {"type": "json_schema", "json_schema": {"schema": schema_json}}
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "portfolio_patch",
+                    "schema": schema_json,
+                    "strict": True,
+                },
+            }
 
         try:
             response = await self.client.chat.completions.create(  # type: ignore[call-arg]
