@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query, Path, status, Depends, BackgroundTasks, UploadFile, File
 from typing import List, Optional
 import json
+import ast
 import time
 import uuid
 import anyio
@@ -62,6 +63,7 @@ ALLOWED_PORTFOLIO_PREFIXES = {
 }
 
 _LIST_FIELDS = {"contacts", "experience", "projects", "skillGroups", "education"}
+_LIST_LEAF_SUFFIXES = {".highlights", ".items", ".tags", ".bio", ".outcomes", ".screenshots"}
 
 
 def _path_to_tokens(path: str) -> list:
@@ -394,6 +396,49 @@ def _coerce_list_field(field: str, value):
     return value
 
 
+def _coerce_leaf_list_field(field: str, value):
+    """Coerce stringified list payloads for nested list fields (e.g., experience[0].highlights)."""
+    if not any(field.endswith(suffix) for suffix in _LIST_LEAF_SUFFIXES):
+        return value
+    if isinstance(value, list):
+        return value
+    if not isinstance(value, str):
+        return value
+    trimmed = value.strip()
+    if not trimmed:
+        return []
+    # First, try strict JSON.
+    try:
+        return json.loads(trimmed)
+    except Exception:
+        pass
+    # Next, try Python literal (handles single quotes).
+    try:
+        parsed = ast.literal_eval(trimmed)
+        if isinstance(parsed, list):
+            return parsed
+    except Exception:
+        pass
+    # Finally, attempt to extract the bracketed portion and JSON-parse it.
+    start = trimmed.find("[")
+    end = trimmed.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        candidate = trimmed[start : end + 1]
+        try:
+            return json.loads(candidate)
+        except Exception:
+            try:
+                parsed = ast.literal_eval(candidate)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Invalid list for field '{field}'",
+    )
+
+
 def _map_field_aliases(field: str) -> str:
     if field.endswith(".organization"):
         return field.replace(".organization", ".company")
@@ -670,6 +715,7 @@ async def apply_portfolio_suggestions(
             if lowered in ("true", "false"):
                 item.value = lowered == "true"
         item.value = _coerce_list_field(field, item.value)
+        item.value = _coerce_leaf_list_field(field, item.value)
         normalized_value = normalize_update(field, item.value)
         normalized_value = _normalize_indexed_update(field, normalized_value)
         if _apply_indexed_list_set(updates, current_data, field, normalized_value):
