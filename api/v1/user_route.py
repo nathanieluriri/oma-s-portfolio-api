@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status, Path,Depen
 from typing import List
 
 from fastapi.responses import RedirectResponse
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from schemas.response_schema import APIResponse
 from schemas.tokens_schema import accessTokenOut
@@ -18,7 +19,6 @@ from services.user_service import (
     add_user,
     remove_user,
     retrieve_users,
-    authenticate_user,
     authenticate_user_google,
     retrieve_user_by_user_id,
     update_user,
@@ -44,6 +44,14 @@ ALLOWED_GOOGLE_EMAILS = {
     if email.strip()
 }
 
+
+def _error_redirect(reason: str) -> RedirectResponse:
+    parts = urlsplit(ERROR_PAGE_URL)
+    query = dict(parse_qsl(parts.query))
+    query["reason"] = reason
+    redirect_url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
+
 # --- Step 1: Redirect user to Google login ---
 @router.get("/google/auth")
 async def login_with_google_account(request: Request):
@@ -55,7 +63,10 @@ async def login_with_google_account(request: Request):
 # --- Step 2: Handle callback from Google ---
 @router.get("/auth/callback")
 async def auth_callback_user(request: Request):
-    token = await oauth.google.authorize_access_token(request) # type: ignore
+    try:
+        token = await oauth.google.authorize_access_token(request) # type: ignore
+    except Exception:
+        return _error_redirect("auth_failed")
     user_info = token.get('userinfo')
 
     # Just print or return user info for now
@@ -63,13 +74,16 @@ async def auth_callback_user(request: Request):
         print("✅ Google user info:", user_info)
         email = (user_info.get("email") or "").strip().lower()
         if not email:
-            raise HTTPException(status_code=400, detail="No email found for Google user")
+            return _error_redirect("auth_failed")
         if not ALLOWED_GOOGLE_EMAILS:
-            raise HTTPException(status_code=500, detail="Allowed Google emails not configured")
+            return _error_redirect("auth_failed")
         if email not in ALLOWED_GOOGLE_EMAILS:
-            raise HTTPException(status_code=403, detail="Email not authorized")
+            return _error_redirect("not_allowed_email")
         rider = UserBase(firstName=user_info['name'],password='',lastName=user_info['given_name'],email=user_info['email'],loginType=LoginType.google)
-        data = await authenticate_user_google(user_data=rider)
+        try:
+            data = await authenticate_user_google(user_data=rider)
+        except Exception:
+            return _error_redirect("auth_failed")
         access_token = data.access_token
         refresh_token = data.refresh_token
 
@@ -80,7 +94,7 @@ async def auth_callback_user(request: Request):
             status_code=status.HTTP_302_FOUND
         )
     else:
-        raise HTTPException(status_code=400,detail={"status": "failed", "message": "No user info found"})
+        return _error_redirect("auth_failed")
 
 @router.get(
     "/me",
