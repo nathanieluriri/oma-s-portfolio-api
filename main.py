@@ -106,6 +106,7 @@ app.add_middleware(
     session_cookie=session_cookie_name,
     same_site=session_cookie_samesite, # type: ignore
     https_only=session_cookie_secure,
+ 
     domain=session_cookie_domain,
 )
 redis_url = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL") \
